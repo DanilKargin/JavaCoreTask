@@ -21,6 +21,14 @@ public class CustomMap<K, V> extends AbstractMap<K,V> implements Map<K,V>, Clone
             this.value = value;
             return oldValue;
         }
+        @Override
+        public boolean equals(Object o){
+            if(o == null){
+                return false;
+            }
+            MapNode node = (MapNode)o;
+            return this.key.equals(node.key) && this.value.equals(node.value);
+        }
 
     }
     private int capacity = 100;
@@ -29,15 +37,17 @@ public class CustomMap<K, V> extends AbstractMap<K,V> implements Map<K,V>, Clone
 
     public CustomMap(){
         nodes = new MapNode[capacity];
-        //size = new AtomicInteger();
     }
-    public CustomMap(int copacity) throws NegativeArraySizeException {
-        this.capacity = copacity;
-        nodes = new MapNode[copacity];
-        //size = new AtomicInteger();
+    public CustomMap(int capacity) throws NegativeArraySizeException {
+        this.capacity = capacity;
+        nodes = new MapNode[capacity];
     }
     private int customHash(K key){
-        return key.hashCode() % capacity;
+        var hash = key.hashCode() % capacity;
+        if(hash < 0){
+            hash *= -1;
+        }
+        return hash;
     }
     @Override
     public int size() {
@@ -99,28 +109,30 @@ public class CustomMap<K, V> extends AbstractMap<K,V> implements Map<K,V>, Clone
     }
 
     @Override
-    public synchronized V put(K key, V value) {
+    public V put(K key, V value) {
         if(key == null || value == null){
             return null;
         }
-        var index = customHash(key);
-        if(nodes[index] == null){
-            nodes[index] = new MapNode<>(key, value);
-            if(size++ == capacity * 2){
-                resize();
-            }
-        }else{
-            var currentNode = nodes[index];
-            while(currentNode != null){
-                if(currentNode.key.equals(key)){
-                    return currentNode.setValue(value);
-                }else{
-                    if(currentNode.nextNode != null){
-                        currentNode = currentNode.nextNode;
-                    }else{
-                        currentNode.nextNode = new MapNode(key, value);
-                        if(size++ == capacity * 2){
-                            resize();
+        synchronized (nodes) {
+            var index = customHash(key);
+            if (nodes[index] == null) {
+                nodes[index] = new MapNode<>(key, value);
+                if (size++ == capacity * 2) {
+                    resize();
+                }
+            } else {
+                var currentNode = nodes[index];
+                while (currentNode != null) {
+                    if (currentNode.key.equals(key)) {
+                        return currentNode.setValue(value);
+                    } else {
+                        if (currentNode.nextNode != null) {
+                            currentNode = currentNode.nextNode;
+                        } else {
+                            currentNode.nextNode = new MapNode(key, value);
+                            if (size++ == capacity * 2) {
+                                resize();
+                            }
                         }
                     }
                 }
@@ -130,9 +142,10 @@ public class CustomMap<K, V> extends AbstractMap<K,V> implements Map<K,V>, Clone
     }
     private void resize(){
         var oldArray = nodes;
-        capacity *= 1000;
+        capacity *= 100;
+        size = 0;
         nodes = new MapNode[capacity];
-        for (var node : oldArray) {
+        for(var node : oldArray){
             while(node != null){
                 put(node.key, node.value);
                 node = node.nextNode;
@@ -141,7 +154,7 @@ public class CustomMap<K, V> extends AbstractMap<K,V> implements Map<K,V>, Clone
     }
 
     @Override
-    public synchronized V remove(Object key) {
+    public V remove(Object key) {
         if(key == null){
             return null;
         }
@@ -150,39 +163,41 @@ public class CustomMap<K, V> extends AbstractMap<K,V> implements Map<K,V>, Clone
         if(currentNode == null){
             return null;
         }
-        if(currentNode.key.equals((K)key)){
-            if(currentNode.nextNode != null){
-                var oldNode = nodes[index];
-                nodes[index] = oldNode.nextNode;
-                oldNode.nextNode = null;
-                size--;
-                return oldNode.value;
-            }else{
-                var value = nodes[index].value;
-                nodes[index] = null;
-                size--;
-                return value;
-            }
-        }
-        while(currentNode != null){
-            if(currentNode.nextNode != null){
-                if(currentNode.nextNode.key.equals((K)key)){
-                    var oldNode = currentNode.nextNode;
-                    currentNode.nextNode = oldNode.nextNode;
-                    oldNode.nextNode = null;
-                    return (V)oldNode.value;
-                }else{
-                    currentNode = currentNode.nextNode;
+            synchronized (currentNode) {
+                if (currentNode.key.equals((K) key)) {
+                    if (currentNode.nextNode != null) {
+                        var oldNode = nodes[index];
+                        nodes[index] = oldNode.nextNode;
+                        oldNode.nextNode = null;
+                        size--;
+                        return oldNode.value;
+                    } else {
+                        var value = nodes[index].value;
+                        nodes[index] = null;
+                        size--;
+                        return value;
+                    }
                 }
-            }else{
-                return null;
+                while (currentNode != null) {
+                    if (currentNode.nextNode != null) {
+                        if (currentNode.nextNode.key.equals((K) key)) {
+                            var oldNode = currentNode.nextNode;
+                            currentNode.nextNode = oldNode.nextNode;
+                            oldNode.nextNode = null;
+                            return (V) oldNode.value;
+                        } else {
+                            currentNode = currentNode.nextNode;
+                        }
+                    } else {
+                        return null;
+                    }
+                }
             }
-        }
         return null;
     }
 
     @Override
-    public synchronized void putAll(Map<? extends K, ? extends V> m) {
+    public void putAll(Map<? extends K, ? extends V> m) {
         for(var node : m.entrySet()) {
             put(node.getKey(), node.getValue());
         }
